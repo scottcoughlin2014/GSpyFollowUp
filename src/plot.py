@@ -7,27 +7,48 @@ import numpy as np
 import pandas
 from gwpy.timeseries import TimeSeries
 
-noglitchdf       = pandas.DataFrame.from_csv('../CSVFiles/Hanford/No_Glitch_metadata.csv')
-scratchyglitchdf = pandas.DataFrame.from_csv('../CSVFiles/Hanford/Scratchy_metadata_ML_H1_Selected.csv')
+import ConfigParser
+import optparse
 
+def parse_commandline():
+    """Parse the options given on the command-line.
+    """
+    parser = optparse.OptionParser()
+    parser.add_option("--inifile", help="Name of ini file of params")
+    parser.add_option("--pathToNoGlitch", help="Location of No Glitch data")
+    parser.add_option("--pathToScratchy", help="Location of Scratchy data")
+    parser.add_option("--verbose", action="store_true", default=False,help="Run in Verbose Mode")    
+    parser.add_option("--pathToSaveASDvsANR", help="Location of where to save figure of ASD vs ANR")
+    parser.add_option("--pathToSaveASDAvg", help ="Location of where to save figure of ASD average")
+    opts, args = parser.parse_args()
+    return opts    
+
+opts = parse_commandline()
+
+# ---- Create configuration-file-parser object and read parameters file.
+cp = ConfigParser.ConfigParser()
+cp.read(opts.inifile)
+channelName = cp.get('channels','channelName')
+numScratchy = cp.getint('parameters','numScratchy')
+numNoGlitch = cp.getint('parameters','numNoGlitch')
+duration = cp.getint('parameters','duration')
+secpfft = cp.getint('parameters','secpfft')
+overlap = cp.getfloat('parameters','overlap')
+
+
+noglitchdf       = pandas.DataFrame.from_csv(opts.pathToNoGlitch)
+scratchyglitchdf = pandas.DataFrame.from_csv(opts.pathToScratchy)
 
 Scratchy10HzASD = []  
 NoGlitch10HzASD = []
 Scratchy10HzSNR = []
 NoGlitch10HzSNR = []
 
-numScratchy = 5
-numNoGlitch = 5
-
-duration    = 120
-secpfft     = 8
-overlap     = 0.75
-
 badtime     = scratchyglitchdf.GPStime.iloc[0]
 goodtime    = noglitchdf.GPStime.iloc[0]
 
-gooddata    = TimeSeries.get('H1:SUS-RM2_M1_DAMP_P_IN1_DQ',goodtime-duration/2,goodtime+duration/2)
-baddata     = TimeSeries.get('H1:SUS-RM2_M1_DAMP_P_IN1_DQ',badtime-duration/2,badtime+duration/2)
+gooddata    = TimeSeries.get(channelName,goodtime-duration/2,goodtime+duration/2)
+baddata     = TimeSeries.get(channelName,badtime-duration/2,badtime+duration/2)
 
 goodasdall    = gooddata.asd(secpfft,overlap)
 badasdall     = baddata.asd(secpfft,overlap)
@@ -41,7 +62,7 @@ NoGlitch10HzSNR.append(noglitchdf.snr.iloc[0])
 iT=1
 for iTime in scratchyglitchdf.GPStime.iloc[1:numScratchy]:
 
-    baddata = TimeSeries.get('H1:SUS-RM2_M1_DAMP_P_IN1_DQ',iTime-duration/2,iTime+duration/2)
+    baddata = TimeSeries.get(channelName,iTime-duration/2,iTime+duration/2)
     Scratchy10HzASD.append(baddata.asd(secpfft,overlap).value[80])
     Scratchy10HzSNR.append(scratchyglitchdf.snr.iloc[iT])
     badasdall += baddata.asd(secpfft,overlap)
@@ -51,7 +72,7 @@ for iTime in scratchyglitchdf.GPStime.iloc[1:numScratchy]:
 
 iT =1
 for iTime in noglitchdf.GPStime.iloc[1:numNoGlitch]:
-    gooddata = TimeSeries.get('H1:SUS-RM2_M1_DAMP_P_IN1_DQ',iTime-duration/2,iTime+duration/2)
+    gooddata = TimeSeries.get(channelName,iTime-duration/2,iTime+duration/2)
     NoGlitch10HzASD.append(gooddata.asd(secpfft,overlap).value[80])
     NoGlitch10HzSNR.append(noglitchdf.snr.iloc[iT])
     goodasdall += gooddata.asd(secpfft,overlap)
@@ -67,8 +88,8 @@ ax1.scatter(Scratchy10HzASD,Scratchy10HzSNR, s=20, c='b', marker="o", label='Scr
 ax1.set_xlabel('ASD at 10 Hz SUS-RM2_M1_DAMP_P')
 ax1.set_ylim(7.5,15)
 ax1.set_ylabel('omicron trigger SNR')
-plt.legend(loc='upper left');
-plt.savefig('/home/scoughlin/public_html/ScratchyFollowup/ASD_vs_ANR_Bp_S_NG_test.png')
+plt.legend(loc='upper left')
+plt.savefig(opts.pathToSaveASDvsANR)
 
 badasdall = badasdall/numScratchy
 plot = badasdall.plot(label='Scratchy')
@@ -79,5 +100,5 @@ ax.set_ylim(1e-6,10)
 ax.grid(True,'both','both')
 goodasdall = goodasdall/numNoGlitch
 ax.plot(goodasdall,label='No Glitch')
-plot.savefig('/home/scoughlin/public_html/ScratchyFollowup/ASDAverage_Bp_S_NG_test.png')
+plot.savefig(opts.pathToSaveASDAvg)
 
